@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import {
   WebGLRenderTarget,
   RGBAFormat,
@@ -6,6 +6,8 @@ import {
   Scene,
   Color,
   Vector2,
+  BufferAttribute,
+  Points,
 } from "three";
 import {
   createPortal,
@@ -20,9 +22,9 @@ const InteractivePoints = ({ data }: { data: [number, number, number][] }) => {
   const { size, camera, gl } = useThree();
   const mouse = new Vector2();
   const controlsRef = useRef<OrbitControls | null>(null);
-
-  // Create picking scene
-  const pickingScene = useMemo(() => new Scene(), []);
+  const pointsRef = useRef<Points | null>(null);
+  const pickingSceneRef = useRef(new Scene());
+  const prevHover = useRef<number | null>(null);
 
   // Create picking render target
   const pickingTarget = useMemo(() => {
@@ -33,13 +35,15 @@ const InteractivePoints = ({ data }: { data: [number, number, number][] }) => {
   }, [size.width, size.height]);
 
   // Generate positions and colors for points
-  const { positions, pickingColors, visibleColors } = useMemo(() => {
+  useEffect(() => {
+    if (!pointsRef.current) return;
     const positions = new Float32Array(data.length * 3);
     const pickingColors = new Float32Array(data.length * 3);
     const visibleColors = new Float32Array(data.length * 3).fill(0);
 
     // Set purple color for all visible points
     const purpleColor = new Color("#800080");
+    prevHover.current = null;
 
     data.forEach((point, i) => {
       // Set positions
@@ -63,12 +67,19 @@ const InteractivePoints = ({ data }: { data: [number, number, number][] }) => {
       visibleColors[i * 3 + 2] = purpleColor.b;
     });
 
-    return { positions, pickingColors, visibleColors };
+    const geometry = pointsRef.current.geometry;
+    geometry.setAttribute("position", new BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new BufferAttribute(visibleColors, 3));
+
+    const pickingGeometry = pickingSceneRef.current.children[0].geometry;
+    pickingGeometry.setAttribute("position", new BufferAttribute(positions, 3));
+    pickingGeometry.setAttribute(
+      "color",
+      new BufferAttribute(pickingColors, 3)
+    );
   }, [data]);
 
-  const pointsRef = useRef(null);
   const pixelBuffer = useMemo(() => new Uint8Array(4), []);
-
   useFrame((state) => {
     if (!controlsRef.current?.isDragging) {
       const { gl } = state;
@@ -78,7 +89,7 @@ const InteractivePoints = ({ data }: { data: [number, number, number][] }) => {
       gl.clear();
 
       // Render picking scene
-      gl.render(pickingScene, camera);
+      gl.render(pickingSceneRef.current, camera);
 
       // Read pixel under mouse
       const x = (mouse.x * 0.5 + 0.5) * pickingTarget.width;
@@ -88,20 +99,47 @@ const InteractivePoints = ({ data }: { data: [number, number, number][] }) => {
       if (x >= 0 && x < size.width && y >= 0 && y < size.height) {
         gl.readRenderTargetPixels(pickingTarget, x, y, 1, 1, pixelBuffer);
 
+        const purpleColor = new Color("#800080");
+        const greenColor = new Color("#008000");
+        const colors = pointsRef.current?.geometry.getAttribute(
+          "color"
+        ) as BufferAttribute;
+
         // Only process if alpha channel indicates a point was hit
         if (pixelBuffer[3] > 0) {
           const id =
             pixelBuffer[0] + (pixelBuffer[1] << 8) + (pixelBuffer[2] << 16) - 1;
           if (id >= 0 && id < data.length) {
-            console.log(id);
+            colors.setXYZ(id, greenColor.r, greenColor.g, greenColor.b);
+            if (prevHover.current && prevHover.current !== id) {
+              colors.setXYZ(
+                prevHover.current,
+                purpleColor.r,
+                purpleColor.g,
+                purpleColor.b
+              );
+            }
+            prevHover.current = id;
+
+            console.log("Hovered point:", id);
 
             setHoveredPoint(id);
           } else {
             setHoveredPoint(null);
           }
         } else {
+          if (prevHover.current !== null) {
+            colors.setXYZ(
+              prevHover.current,
+              purpleColor.r,
+              purpleColor.g,
+              purpleColor.b
+            );
+          }
+
           setHoveredPoint(null);
         }
+        colors.needsUpdate = true;
       }
 
       // Reset render target
@@ -126,47 +164,21 @@ const InteractivePoints = ({ data }: { data: [number, number, number][] }) => {
       />
       {/* Visible points */}
       <points ref={pointsRef} onPointerMove={handlePointerMove}>
-        <bufferGeometry>
-          <bufferAttribute
-            attach="attributes-position"
-            count={data.length}
-            array={positions}
-            itemSize={3}
-          />
-          <bufferAttribute
-            attach="attributes-color"
-            count={data.length}
-            array={visibleColors}
-            itemSize={3}
-          />
-        </bufferGeometry>
-        <pointsMaterial size={5} color="#800080" sizeAttenuation={false} />
+        <bufferGeometry />
+        <pointsMaterial size={5} vertexColors sizeAttenuation={false} />
       </points>
 
       {/* Picking scene rendered to offscreen target */}
       {createPortal(
         <points>
-          <bufferGeometry>
-            <bufferAttribute
-              attach="attributes-position"
-              count={data.length}
-              array={positions}
-              itemSize={3}
-            />
-            <bufferAttribute
-              attach="attributes-color"
-              count={data.length}
-              array={pickingColors}
-              itemSize={3}
-            />
-          </bufferGeometry>
+          <bufferGeometry />
           <pointsMaterial size={5} vertexColors sizeAttenuation={false} />
         </points>,
-        pickingScene
+        pickingSceneRef.current
       )}
 
       {/* Hover indicator */}
-      {hoveredPoint !== null && (
+      {/* {hoveredPoint !== null && (
         <mesh
           position={[
             data[hoveredPoint][0],
@@ -177,7 +189,7 @@ const InteractivePoints = ({ data }: { data: [number, number, number][] }) => {
           <sphereGeometry args={[0.1]} />
           <meshBasicMaterial color="yellow" />
         </mesh>
-      )}
+      )} */}
     </group>
   );
 };

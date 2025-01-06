@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import InteractivePoints from "./points";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Group } from "three";
+import { div } from "three/tsl";
 
 function CustomOrbitControls() {
   const { camera, gl } = useThree(); // Access camera and renderer
@@ -29,32 +30,52 @@ function CustomOrbitControls() {
   return null;
 }
 
-const generateRandomPoints = (minCount = 50, maxCount = 200, range = 5) => {
-  const count =
-    Math.floor(Math.random() * (maxCount - minCount + 1)) + minCount;
-  return {
-    points: Array.from({ length: count }, () => [
-      (Math.random() - 0.5) * range,
-      (Math.random() - 0.5) * range,
-      (Math.random() - 0.5) * range,
-    ]),
-    count,
-  };
-};
-
 export default function App() {
-  const [pointsData, setPointsData] = useState(() =>
-    generateRandomPoints(50, 200)
-  );
+  // const data = useMemo(() => {
+  //   const points: [number, number, number][] = [];
+  //   for (let i = 0; i < 2000; i++) {
+  //     points.push([
+  //       (Math.random() - 0.5) * 20,
+  //       (Math.random() - 0.5) * 20,
+  //       (Math.random() - 0.5) * 20,
+  //     ]);
+  //   }
+  //   return points;
+  // }, []);
 
-  const handleClick = () => {
-    setPointsData(generateRandomPoints(50, 200))
-  }
+  const [data, setPoints] = useState(() => {
+    const points: [number, number, number][] = [];
+    for (let i = 0; i < 20; i++) {
+      points.push([
+        (Math.random() - 0.5) * 20,
+        (Math.random() - 0.5) * 20,
+        (Math.random() - 0.5) * 20,
+      ]);
+    }
+    return points;
+  });
+
+  const handleAddPoints = () => {
+    const newPoints: [number, number, number][] = [];
+    for (let i = 0; i < 20; i++) {
+      newPoints.push([
+        (Math.random() - 0.5) * 20,
+        (Math.random() - 0.5) * 20,
+        (Math.random() - 0.5) * 20,
+      ]);
+    }
+    setPoints((prevPoints) => [...prevPoints, ...newPoints]);
+  };
+
+  const handleRemovePoints = () => {
+    setPoints((prevPoints) => prevPoints.slice(0, prevPoints.length - 20));
+  };
 
   return (
-    <>
-      <nav>
-        <button onClick={handleClick}>Click</button>
+    <div>
+      <nav style={{ position: "absolute", zIndex: 1 }}>
+        <button onClick={handleAddPoints}>Add points</button>
+        <button onClick={handleRemovePoints}>Remove points</button>
       </nav>
       <Canvas
         camera={{
@@ -64,10 +85,11 @@ export default function App() {
         }}
         style={{ height: "100vh", width: "100vw" }}
       >
-        <InteractivePoints data={pointsData.points} />
+        <InteractivePoints data={data} />
         <axesHelper args={[5]} />
         <ambientLight />
+        <CustomOrbitControls />
       </Canvas>
-    </>
+    </div>
   );
 }
